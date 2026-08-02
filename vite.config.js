@@ -8,13 +8,5 @@ export default defineConfig({
     host: true,
     port: 5173,
     allowedHosts: true, // 👈 Cloudflare va boshqa tashqi havolalarga ruxsat beradi
-    proxy: {
-      "/api": {
-        target: "http://localhost:5000",
-        changeOrigin: true,
-        secure: false,
-      },
-    },
   },
 });
-

@@ -213,10 +213,21 @@ export default function AdminMarket() {
   async function loadProducts() {
     try {
       const data = await getProducts();
-      setProducts(data || []);
+      // 🔒 XAVFSIZLIK: API'dan kelgan javob massiv bo'lsa o'zini, 
+      // aks holda data.products yoki data.data massivini olamiz
+      if (Array.isArray(data)) {
+        setProducts(data);
+      } else if (data && Array.isArray(data.products)) {
+        setProducts(data.products);
+      } else if (data && Array.isArray(data.data)) {
+        setProducts(data.data);
+      } else {
+        setProducts([]);
+      }
     } catch (err) {
       console.error("Mahsulotlarni yuklashda xatolik:", err);
-    } finally {
+      setProducts([]);
+    }  finally {
       setLoading(false);
     }
   }
@@ -270,7 +281,9 @@ export default function AdminMarket() {
     }
   }
 
-  const filteredProducts = products.filter((p) =>
+  // 🔒 XAVFSIZ FILTER: products har doim massiv ekanligi kafolatlanadi
+  const safeProductsList = Array.isArray(products) ? products : [];
+  const filteredProducts = safeProductsList.filter((p) =>
     (p.title || p.name || '').toLowerCase().includes(search.toLowerCase())
   );
 
