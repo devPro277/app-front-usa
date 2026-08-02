@@ -1,8 +1,8 @@
 import axios from 'axios';
 
-// Backend server manzili
+// Backend server manzili (Render Live Production)
 const API = axios.create({
-  baseURL: 'http://192.168.1.51:5000/api',
+  baseURL: 'https://usa-backend-7teh.onrender.com/api',
 });
 
 export default API;
