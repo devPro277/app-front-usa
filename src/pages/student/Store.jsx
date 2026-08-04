@@ -1,32 +1,30 @@
 import React, { useState, useEffect } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import toast, { Toaster } from 'react-hot-toast';
 import { FiShoppingBag, FiZap } from 'react-icons/fi';
-import API from "../../api";
+import API from '../../api';
 
-export default function StudentStore({ currentStudent, onUpdateStudent }) {
+export default function Store() {
+  const { currentStudent, updateStudentXp } = useOutletContext() || {};
   const [products, setProducts] = useState([]);
-  const [studentXp, setStudentXp] = useState(0);
+  const [studentXp, setStudentXp] = useState(currentStudent?.xp || 0);
   const [loading, setLoading] = useState(true);
   const [purchasingId, setPurchasingId] = useState(null);
 
-  // 1. Student XP ni sinxronlash (Prop o'zgarsa ham yangilanadi)
   useEffect(() => {
-    if (currentStudent && (currentStudent.xp !== undefined || currentStudent.points !== undefined)) {
-      setStudentXp(Number(currentStudent.xp ?? currentStudent.points ?? 0));
+    if (currentStudent?.xp !== undefined) {
+      setStudentXp(Number(currentStudent.xp));
     }
   }, [currentStudent]);
 
-  // 2. Mahsulotlarni backend'dan yuklab olish
   const fetchProducts = async () => {
     try {
       setLoading(true);
       const res = await API.get('/products');
-      
-      // Backend qaytargan javob formatiga moslash
       const list = res.data?.data || (Array.isArray(res.data) ? res.data : []);
       setProducts(list);
     } catch (error) {
-      console.error("Mahsulotlarni yuklashda xatolik:", error);
+      console.error("Do'kon mahsulotlarini yuklashda xatolik:", error);
       toast.error("Do'kon mahsulotlarini yuklab bo'lmadi!");
     } finally {
       setLoading(false);
@@ -37,57 +35,42 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
     fetchProducts();
   }, []);
 
-  // 3. Sotib olish mantiqi
   const handleBuy = async (product) => {
     const productId = product._id || product.id;
     const cost = Number(product.xp_cost ?? product.price ?? 0);
-    const studentId = currentStudent?._id || currentStudent?.id || localStorage.getItem('unisphere_student_id');
+    const studentId = currentStudent?.id || currentStudent?._id;
 
-    // Tekshiruvlar
-    if (!studentId) {
-      return toast.error("O'quvchi profili aniqlanmadi!");
-    }
-
-    if (studentXp < cost) {
-      return toast.error("XP balansingiz yetarli emas! ⚡");
-    }
-
-    if (product.stock <= 0) {
-      return toast.error("Afsuski, ushbu mahsulot omborda tugagan!");
-    }
+    if (!studentId) return toast.error("O'quvchi profili aniqlanmadi!");
+    if (studentXp < cost) return toast.error("XP balansingiz yetarli emas! ⚡");
+    if (product.stock <= 0) return toast.error("Afsuski, ushbu mahsulot omborda tugagan!");
 
     try {
       setPurchasingId(productId);
 
-      // Backend route: POST /api/products/buy
       const response = await API.post('/products/buy', {
-        productId: productId,
-        studentId: studentId,
+        productId,
+        studentId,
         phone: currentStudent?.phone,
       });
 
       const updatedData = response.data?.data || response.data;
       const newXp = updatedData?.newXp !== undefined ? updatedData.newXp : studentXp - cost;
 
-      // Local State update
       setStudentXp(newXp);
+      if (typeof updateStudentXp === 'function') {
+        updateStudentXp(newXp);
+      }
+
       setProducts((prev) =>
         prev.map((p) =>
           (p._id || p.id) === productId ? { ...p, stock: Math.max(0, p.stock - 1) } : p
         )
       );
 
-      // Agar App.jsx darajasida student state-ni yangilash funksiyasi berilgan bo'lsa
-      if (typeof onUpdateStudent === 'function') {
-        onUpdateStudent({ ...currentStudent, xp: newXp });
-      }
-
       toast.success(`Tabriklaymiz! "${product.name}" muvaffaqiyatli xarid qilindi! 🎉`);
     } catch (error) {
       console.error("Xarid qilishda xatolik:", error);
-      toast.error(
-        error.response?.data?.message || "Xaridni amalga oshirib bo'lmadi!"
-      );
+      toast.error(error.response?.data?.message || "Xaridni amalga oshirib bo'lmadi!");
     } finally {
       setPurchasingId(null);
     }
@@ -95,7 +78,7 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-[60vh] gap-3 bg-[#0B132B]">
+      <div className="flex flex-col justify-center items-center min-h-[60vh] gap-3">
         <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-slate-400 text-xs font-semibold animate-pulse">
           Do'kon yuklanmoqda...
@@ -105,10 +88,10 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
   }
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-[#0B132B] text-white px-4 pt-4 pb-24">
+    <div className="max-w-md mx-auto px-4 pt-4 pb-6 text-white">
       <Toaster position="bottom-center" />
 
-      {/* HEADER: O'quvchi XP Balansi */}
+      {/* HEADER */}
       <div className="flex items-center justify-between mb-5 bg-[#1C2541] border border-slate-800 p-4 rounded-2xl shadow-lg">
         <div>
           <h1 className="text-base font-extrabold flex items-center gap-2 text-white">
@@ -138,7 +121,6 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
                 key={prodId}
                 className="bg-[#1C2541] border border-slate-800 rounded-2xl p-3 flex flex-col justify-between shadow-sm overflow-hidden"
               >
-                {/* RASM BLOKI */}
                 <div className="w-full h-36 rounded-xl overflow-hidden bg-[#0B132B]/50 flex items-center justify-center p-2">
                   <img
                     src={item.imageUrl || item.image}
@@ -151,16 +133,11 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
                   />
                 </div>
 
-                {/* MAHSULOT MA'LUMOTLARI */}
                 <div className="mt-3 flex flex-col flex-1 justify-between">
                   <div>
-                    <h3
-                      className="text-xs font-bold text-white line-clamp-1 mb-1.5"
-                      title={item.name}
-                    >
+                    <h3 className="text-xs font-bold text-white line-clamp-1 mb-1.5" title={item.name}>
                       {item.name}
                     </h3>
-
                     <div className="flex items-center justify-between text-[11px] mb-3">
                       <span className="font-mono font-extrabold text-orange-400 text-sm">
                         {cost} XP
@@ -171,7 +148,6 @@ export default function StudentStore({ currentStudent, onUpdateStudent }) {
                     </div>
                   </div>
 
-                  {/* SOTIB OLISH TUGMASI */}
                   <button
                     onClick={() => handleBuy(item)}
                     disabled={!canAfford || !inStock || purchasingId === prodId}
