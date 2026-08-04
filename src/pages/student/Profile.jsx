@@ -19,20 +19,23 @@ export default function Profile() {
   const fetchData = async () => {
     try {
       setLoading(true);
-      const getProfileFn = API.getStudentProfile || API.getMe;
-      const getBoardFn = API.getLeaderboard || API.getStudents;
 
-      const [profileRes, boardRes] = await Promise.allSettled([
-        typeof getProfileFn === 'function' ? getProfileFn() : Promise.resolve(null),
-        typeof getBoardFn === 'function' ? getBoardFn() : Promise.resolve([]),
-      ]);
+      // 1. Profil ma'lumotlarini olish
+      const getProfileFn = API.getStudentProfile || API.getMe;
+      let rawProfile = null;
+      if (typeof getProfileFn === 'function') {
+        try {
+          const res = await getProfileFn();
+          rawProfile = res?.data?.data || res?.data || res;
+        } catch (e) {
+          console.warn("Profil API xatosi:", e);
+        }
+      }
 
       const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-      const rawProfile = profileRes.status === 'fulfilled' ? profileRes.value : null;
 
-      // 1. Profile Data normalize qilish
       const profileData = {
-        id: rawProfile?.id || rawProfile?._id || tgUser?.id || 'me',
+        id: String(rawProfile?.id || rawProfile?._id || tgUser?.id || 'me'),
         fullName:
           rawProfile?.fullName ||
           rawProfile?.name ||
@@ -40,15 +43,32 @@ export default function Profile() {
         phone: rawProfile?.phone || '+998 (90) 000-00-00',
         group: rawProfile?.group || rawProfile?.groupName || 'Frontend Bootcamp',
         tier: rawProfile?.tier || 'Bronze',
-        xp: rawProfile?.xp ?? rawProfile?.points ?? rawProfile?.balance ?? 0,
+        xp: Number(rawProfile?.xp ?? rawProfile?.points ?? rawProfile?.balance ?? 0),
         groupRank: rawProfile?.groupRank || 0,
       };
 
-      // 2. Leaderboard Data normalize va XP bo'yicha saralash
-      let boardData =
-        boardRes.status === 'fulfilled' && Array.isArray(boardRes.value) ? boardRes.value : [];
+      // 2. Leaderboard ma'lumotlarini olish (Guruh bo'yicha parametr uzatamiz)
+      const getBoardFn = API.getLeaderboard || API.getStudents;
+      let boardRes = [];
+      if (typeof getBoardFn === 'function') {
+        try {
+          const res = await getBoardFn(profileData.group);
+          boardRes = res?.data?.data || res?.data || res;
+        } catch (e) {
+          console.warn("Leaderboard API xatosi:", e);
+        }
+      }
 
-      boardData = boardData.sort((a, b) => (b.xp || b.points || 0) - (a.xp || a.points || 0));
+      let boardData = Array.isArray(boardRes) ? boardRes : [];
+
+      // XP bo'yicha tartiblash va ID larni stringga o'girish
+      boardData = boardData
+        .map((item) => ({
+          ...item,
+          id: String(item.id || item._id),
+          xp: Number(item.xp ?? item.points ?? item.balance ?? 0),
+        }))
+        .sort((a, b) => b.xp - a.xp);
 
       setStudent(profileData);
       setLeaderboard(boardData);
@@ -75,10 +95,10 @@ export default function Profile() {
     xp: 0,
   };
 
-  const studentId = currentStudent.id || currentStudent._id;
+  const studentId = String(currentStudent.id || currentStudent._id);
 
-  // Guruhdagi o'rinni aniqlash
-  const foundIndex = leaderboard.findIndex((s) => (s.id || s._id) === studentId);
+  // Guruhdagi o'rinni aniqlash (String tipida xavfsiz taqqoslash)
+  const foundIndex = leaderboard.findIndex((s) => String(s.id || s._id) === studentId);
   const myRank = currentStudent.groupRank || (foundIndex !== -1 ? foundIndex + 1 : 0);
 
   const top3 = leaderboard.slice(0, 3);
@@ -145,6 +165,7 @@ export default function Profile() {
 
         {leaderboard.length > 0 ? (
           <>
+            {/* Pedestal layout: 2-o'rin (chap), 1-o'rin (o'rta), 3-o'rin (o'ng) */}
             <div className="flex items-end justify-center gap-3 pb-4">
               <PodiumCard student={top3[1]} rank={2} height="h-20" />
               <PodiumCard student={top3[0]} rank={1} height="h-28" />
@@ -176,7 +197,8 @@ export default function Profile() {
 }
 
 function PodiumCard({ student, rank, height }) {
-  if (!student) return <div className="w-24" />;
+  if (!student) return <div className="w-24 opacity-0 pointer-events-none" />;
+  
   const badge = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
   const accentColor =
     rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : 'text-amber-700';

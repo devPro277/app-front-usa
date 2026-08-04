@@ -3,13 +3,20 @@ import toast, { Toaster } from 'react-hot-toast';
 import { FiShoppingBag, FiZap } from 'react-icons/fi';
 import API from "../../api";
 
-export default function StudentStore({ currentStudent }) {
+export default function StudentStore({ currentStudent, onUpdateStudent }) {
   const [products, setProducts] = useState([]);
-  const [studentXp, setStudentXp] = useState(currentStudent?.xp || 0);
+  const [studentXp, setStudentXp] = useState(0);
   const [loading, setLoading] = useState(true);
   const [purchasingId, setPurchasingId] = useState(null);
 
-  // 1. Mahsulotlarni backend'dan yuklab olish
+  // 1. Student XP ni sinxronlash (Prop o'zgarsa ham yangilanadi)
+  useEffect(() => {
+    if (currentStudent && (currentStudent.xp !== undefined || currentStudent.points !== undefined)) {
+      setStudentXp(Number(currentStudent.xp ?? currentStudent.points ?? 0));
+    }
+  }, [currentStudent]);
+
+  // 2. Mahsulotlarni backend'dan yuklab olish
   const fetchProducts = async () => {
     try {
       setLoading(true);
@@ -28,17 +35,19 @@ export default function StudentStore({ currentStudent }) {
 
   useEffect(() => {
     fetchProducts();
-    if (currentStudent?.xp !== undefined) {
-      setStudentXp(currentStudent.xp);
-    }
-  }, [currentStudent]);
+  }, []);
 
-  // 2. Sotib olish mantiqi (Backend routeringizga 100% mos)
+  // 3. Sotib olish mantiqi
   const handleBuy = async (product) => {
     const productId = product._id || product.id;
-    const cost = product.xp_cost;
+    const cost = Number(product.xp_cost ?? product.price ?? 0);
+    const studentId = currentStudent?._id || currentStudent?.id || localStorage.getItem('unisphere_student_id');
 
-    // Frontend tomondan tezkor tekshiruvlar
+    // Tekshiruvlar
+    if (!studentId) {
+      return toast.error("O'quvchi profili aniqlanmadi!");
+    }
+
     if (studentXp < cost) {
       return toast.error("XP balansingiz yetarli emas! ⚡");
     }
@@ -53,17 +62,25 @@ export default function StudentStore({ currentStudent }) {
       // Backend route: POST /api/products/buy
       const response = await API.post('/products/buy', {
         productId: productId,
-        studentId: currentStudent?._id || currentStudent?.id, // Yoki auth token bo'lsa backend o'zi aniqlaydi
+        studentId: studentId,
         phone: currentStudent?.phone,
       });
 
-      // Muvaffaqiyatli xariddan so'ng state'larni yangilash
-      setStudentXp((prev) => prev - cost);
+      const updatedData = response.data?.data || response.data;
+      const newXp = updatedData?.newXp !== undefined ? updatedData.newXp : studentXp - cost;
+
+      // Local State update
+      setStudentXp(newXp);
       setProducts((prev) =>
         prev.map((p) =>
-          (p._id || p.id) === productId ? { ...p, stock: p.stock - 1 } : p
+          (p._id || p.id) === productId ? { ...p, stock: Math.max(0, p.stock - 1) } : p
         )
       );
+
+      // Agar App.jsx darajasida student state-ni yangilash funksiyasi berilgan bo'lsa
+      if (typeof onUpdateStudent === 'function') {
+        onUpdateStudent({ ...currentStudent, xp: newXp });
+      }
 
       toast.success(`Tabriklaymiz! "${product.name}" muvaffaqiyatli xarid qilindi! 🎉`);
     } catch (error) {
@@ -78,7 +95,7 @@ export default function StudentStore({ currentStudent }) {
 
   if (loading) {
     return (
-      <div className="flex flex-col justify-center items-center min-h-[60vh] gap-3">
+      <div className="flex flex-col justify-center items-center min-h-[60vh] gap-3 bg-[#0B132B]">
         <div className="w-8 h-8 border-4 border-orange-500 border-t-transparent rounded-full animate-spin" />
         <p className="text-slate-400 text-xs font-semibold animate-pulse">
           Do'kon yuklanmoqda...
@@ -112,19 +129,19 @@ export default function StudentStore({ currentStudent }) {
         {products.length > 0 ? (
           products.map((item) => {
             const prodId = item._id || item.id;
-            const cost = item.xp_cost ?? 0;
+            const cost = Number(item.xp_cost ?? item.price ?? 0);
             const canAfford = studentXp >= cost;
-            const inStock = item.stock > 0;
+            const inStock = Number(item.stock) > 0;
 
             return (
               <div
                 key={prodId}
                 className="bg-[#1C2541] border border-slate-800 rounded-2xl p-3 flex flex-col justify-between shadow-sm overflow-hidden"
               >
-                {/* RASM BLOKI - Proportion buzilmaydi */}
+                {/* RASM BLOKI */}
                 <div className="w-full h-36 rounded-xl overflow-hidden bg-[#0B132B]/50 flex items-center justify-center p-2">
                   <img
-                    src={item.imageUrl}
+                    src={item.imageUrl || item.image}
                     alt={item.name}
                     className="w-full h-full object-contain"
                     onError={(e) => {
