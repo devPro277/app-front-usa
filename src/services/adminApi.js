@@ -52,22 +52,21 @@ const setStored = (key, value) => {
 // ==========================================
 export const getProducts = async () => {
   try {
-    const data = await API.get('/products');
-    if (Array.isArray(data)) {
-      return data.map((p) => ({
-        ...p,
-        id: p._id || p.id,
-        title: p.name || p.title,
-        price: p.xp_cost !== undefined ? p.xp_cost : p.price,
-        cost: p.xp_cost !== undefined ? p.xp_cost : p.cost,
-        stock: p.stock,
-        image: p.imageUrl || p.image,
-      }));
-    }
-    return data;
+    const response = await API.get('/products');
+    const resData = response?.data ?? response;
+
+    if (Array.isArray(resData)) return resData;
+    if (resData && typeof resData === 'object' && Array.isArray(resData.data)) return resData.data;
+    if (resData && typeof resData === 'object' && Array.isArray(resData.products)) return resData.products;
+
+    const local = localStorage.getItem('unisphere_market_products');
+    if (local) return JSON.parse(local);
+    return typeof MOCK_PRODUCTS !== 'undefined' ? MOCK_PRODUCTS : [];
   } catch (error) {
-    console.warn("⚠️ Backend Market endpointi topilmadi, mock/localStorage ishlatilmoqda");
-    return getStored('unisphere_market_products', MOCK_PRODUCTS);
+    console.error("Backend so'rovida xatolik yuz berdi:", error);
+    const local = localStorage.getItem('unisphere_market_products');
+    if (local) return JSON.parse(local);
+    return typeof MOCK_PRODUCTS !== 'undefined' ? MOCK_PRODUCTS : [];
   }
 };
 
@@ -76,23 +75,21 @@ export const getAdminProducts = getProducts;
 export const addProduct = async (productData) => {
   const payload = {
     name: productData.name || productData.title,
+    title: productData.title || productData.name,
     xp_cost: Number(productData.xp_cost ?? productData.price ?? productData.cost ?? 0),
-    stock: Number(productData.stock ?? 0),
+    price: Number(productData.price ?? productData.xp_cost ?? productData.cost ?? 0),
+    stock: Number(productData.stock ?? productData.quantity ?? 0),
     imageUrl: productData.imageUrl || productData.image || "https://images.unsplash.com/photo-1572375992501-4b0892d50c69?w=500",
+    description: productData.description || '',
   };
 
   try {
-    return await API.post('/products', payload);
+    const res = await API.post('/products', payload);
+    return res?.data?.data || res?.data || res;
   } catch (error) {
-    console.warn("⚠️ Backend ishlamadi, LocalStorage ga qo'shilmoqda");
+    console.warn("⚠️ Backend ishlamadi, LocalStorage ga qo'shilmoqda:", error.message);
     const current = getStored('unisphere_market_products', MOCK_PRODUCTS);
-    const newP = { 
-      ...payload, 
-      id: Date.now().toString(),
-      title: payload.name,
-      price: payload.xp_cost,
-      image: payload.imageUrl
-    };
+    const newP = { ...payload, id: Date.now().toString(), _id: Date.now().toString() };
     const updated = [newP, ...current];
     setStored('unisphere_market_products', updated);
     return newP;
@@ -102,136 +99,174 @@ export const addProduct = async (productData) => {
 export const createProduct = addProduct;
 
 export const updateProduct = async (id, productData) => {
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
   const payload = {
     name: productData.name || productData.title,
+    title: productData.title || productData.name,
     xp_cost: Number(productData.xp_cost ?? productData.price ?? productData.cost ?? 0),
-    stock: Number(productData.stock ?? 0),
+    price: Number(productData.price ?? productData.xp_cost ?? productData.cost ?? 0),
+    stock: Number(productData.stock ?? productData.quantity ?? 0),
     imageUrl: productData.imageUrl || productData.image || "https://images.unsplash.com/photo-1572375992501-4b0892d50c69?w=500",
+    description: productData.description || '',
   };
 
   try {
-    return await API.put(`/products/${id}`, payload);
+    const res = await API.put(`/products/${cleanId}`, payload);
+    return res?.data?.data || res?.data || res;
   } catch (error) {
-    console.warn("⚠️ Backend yo'q, LocalStorage update qilinmoqda");
+    console.warn("⚠️ Backend update ishlamadi, LocalStorage yangilanmoqda");
     const current = getStored('unisphere_market_products', MOCK_PRODUCTS);
-    const updated = current.map((p) => (p.id === id || p._id === id ? { ...p, ...payload, title: payload.name, price: payload.xp_cost, image: payload.imageUrl } : p));
+    const updated = current.map((p) => (p.id === cleanId || p._id === cleanId ? { ...p, ...payload } : p));
     setStored('unisphere_market_products', updated);
     return payload;
   }
 };
 
 export const deleteProduct = async (id) => {
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
   try {
-    return await API.del(`/products/${id}`);
+    const res = await API.del(`/products/${cleanId}`);
+    return res?.data || true;
   } catch (error) {
-    console.warn("⚠️ Backend yo'q, LocalStorage dan o'chirilmoqda");
+    console.warn("⚠️ Backend delete ishlamadi, LocalStorage dan o'chirilmoqda");
     const current = getStored('unisphere_market_products', MOCK_PRODUCTS);
-    const updated = current.filter((p) => p.id !== id && p._id !== id);
+    const updated = current.filter((p) => p.id !== cleanId && p._id !== cleanId);
     setStored('unisphere_market_products', updated);
     return true;
   }
 };
 
 // ==========================================
-// 2. GURUHLAR (GROUPS) - FULL CRUD
+// 2. GURUHLAR (GROUPS) - REAL BACKEND INTEGRATION
 // ==========================================
 export const getGroups = async () => {
-  const groups = getStored('unisphere_groups', DEFAULT_GROUPS);
-  const students = await getStudents();
-
-  return groups.map((group) => {
-    const count = students.filter((s) => {
-      const studentGroup = (s.group || s.groupName || '').trim().toLowerCase();
-      const groupName = (group.name || '').trim().toLowerCase();
-      return studentGroup === groupName && s.status !== 'inactive';
-    }).length;
-
-    return {
-      ...group,
-      studentsCount: count,
-    };
-  });
+  try {
+    const res = await API.get('/groups');
+    const rawData = res?.data?.data || res?.data || res;
+    if (Array.isArray(rawData)) return rawData;
+  } catch (error) {
+    console.warn("⚠️ Backend Groups API xatosi, LocalStorage ishlatilmoqda:", error.message);
+  }
+  return getStored('unisphere_groups', DEFAULT_GROUPS);
 };
 
 export const addGroup = async (groupData) => {
-  const current = getStored('unisphere_groups', DEFAULT_GROUPS);
-  const newGroup = {
-    ...groupData,
-    id: groupData.id || groupData._id || Date.now().toString(),
+  const payload = {
     name: groupData.name || groupData.title || '',
+    teacherId: groupData.teacherId || '',
+    teacherName: groupData.teacherName || '',
   };
-  const updated = [newGroup, ...current];
-  setStored('unisphere_groups', updated);
-  return newGroup;
+
+  try {
+    const res = await API.post('/groups', payload);
+    return res?.data?.data || res?.data || res;
+  } catch (error) {
+    const current = getStored('unisphere_groups', DEFAULT_GROUPS);
+    const newGroup = { ...payload, id: Date.now().toString(), _id: Date.now().toString() };
+    const updated = [newGroup, ...current];
+    setStored('unisphere_groups', updated);
+    return newGroup;
+  }
 };
 
 export const createGroup = addGroup;
 
 export const updateGroup = async (id, groupData) => {
-  const current = getStored('unisphere_groups', DEFAULT_GROUPS);
-  const updated = current.map((g) =>
-    g.id === id || g._id === id ? { ...g, ...groupData } : g
-  );
-  setStored('unisphere_groups', updated);
-  return groupData;
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
+  try {
+    const res = await API.put(`/groups/${cleanId}`, groupData);
+    return res?.data?.data || res?.data || res;
+  } catch (error) {
+    const current = getStored('unisphere_groups', DEFAULT_GROUPS);
+    const updated = current.map((g) => (g.id === cleanId || g._id === cleanId ? { ...g, ...groupData } : g));
+    setStored('unisphere_groups', updated);
+    return groupData;
+  }
 };
 
 export const deleteGroup = async (id) => {
-  const current = getStored('unisphere_groups', DEFAULT_GROUPS);
-  const updated = current.filter((g) => g.id !== id && g._id !== id);
-  setStored('unisphere_groups', updated);
-  return true;
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
+  try {
+    await API.del(`/groups/${cleanId}`);
+    return true;
+  } catch (error) {
+    const current = getStored('unisphere_groups', DEFAULT_GROUPS);
+    const updated = current.filter((g) => g.id !== cleanId && g._id !== cleanId);
+    setStored('unisphere_groups', updated);
+    return true;
+  }
 };
 
 // ==========================================
-// 3. USTOZLAR (TEACHERS) - FULL CRUD
+// 3. USTOZLAR (TEACHERS) - REAL BACKEND INTEGRATION
 // ==========================================
 export const getTeachers = async () => {
-  const teachers = getStored('unisphere_teachers', DEFAULT_TEACHERS);
-  const groups = getStored('unisphere_groups', DEFAULT_GROUPS);
+  let teachers = [];
+  try {
+    const res = await API.get('/teachers');
+    const rawData = res?.data?.data || res?.data || res;
+    if (Array.isArray(rawData)) teachers = rawData;
+  } catch (error) {
+    teachers = getStored('unisphere_teachers', DEFAULT_TEACHERS);
+  }
+
+  const groups = await getGroups();
 
   return teachers.map((teacher) => {
     const teacherGroupCount = groups.filter((g) => {
+      const tId = teacher.id || teacher._id;
       return (
-        g.teacherId === teacher.id ||
+        g.teacherId === tId ||
         g.teacherName === teacher.name ||
-        g.teacher === teacher.name ||
-        g.mainTeacher === teacher.name
+        g.teacher === teacher.name
       );
     }).length;
 
     return {
       ...teacher,
+      id: teacher._id || teacher.id,
       groupsCount: teacherGroupCount,
     };
   });
 };
 
 export const addTeacher = async (teacherData) => {
-  const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
-  const newTeacher = {
-    ...teacherData,
-    id: teacherData.id || teacherData._id || Date.now().toString(),
-  };
-  const updated = [newTeacher, ...current];
-  setStored('unisphere_teachers', updated);
-  return newTeacher;
+  try {
+    const res = await API.post('/teachers', teacherData);
+    return res?.data?.data || res?.data || res;
+  } catch (error) {
+    const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
+    const newTeacher = { ...teacherData, id: Date.now().toString(), _id: Date.now().toString() };
+    const updated = [newTeacher, ...current];
+    setStored('unisphere_teachers', updated);
+    return newTeacher;
+  }
 };
 
 export const updateTeacher = async (id, teacherData) => {
-  const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
-  const updated = current.map((t) =>
-    t.id === id || t._id === id ? { ...t, ...teacherData } : t
-  );
-  setStored('unisphere_teachers', updated);
-  return teacherData;
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
+  try {
+    const res = await API.put(`/teachers/${cleanId}`, teacherData);
+    return res?.data?.data || res?.data || res;
+  } catch (error) {
+    const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
+    const updated = current.map((t) => (t.id === cleanId || t._id === cleanId ? { ...t, ...teacherData } : t));
+    setStored('unisphere_teachers', updated);
+    return teacherData;
+  }
 };
 
 export const deleteTeacher = async (id) => {
-  const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
-  const updated = current.filter((t) => t.id !== id && t._id !== id);
-  setStored('unisphere_teachers', updated);
-  return true;
+  const cleanId = typeof id === 'object' ? (id._id || id.id) : id;
+  try {
+    await API.del(`/teachers/${cleanId}`);
+    return true;
+  } catch (error) {
+    const current = getStored('unisphere_teachers', DEFAULT_TEACHERS);
+    const updated = current.filter((t) => t.id !== cleanId && t._id !== cleanId);
+    setStored('unisphere_teachers', updated);
+    return true;
+  }
 };
 
 // ==========================================
@@ -260,7 +295,7 @@ const formatStudent = (s) => {
 export const getStudents = async () => {
   try {
     const res = await API.get('/students');
-    const rawData = res?.data || res;
+    const rawData = res?.data?.data || res?.data || res;
     if (Array.isArray(rawData)) {
       return rawData.map(formatStudent);
     }
@@ -282,15 +317,12 @@ export const addStudent = async (studentData) => {
 
   try {
     const res = await API.post('/students', payload);
-    const created = res?.data || res;
+    const created = res?.data?.data || res?.data || res;
     return formatStudent(created);
   } catch (error) {
     console.warn("⚠️ Backend ga qo'shib bo'lmadi, LocalStorage ga yozilmoqda");
     const current = getStored('unisphere_students', DEFAULT_STUDENTS);
-    const newStudent = formatStudent({
-      ...payload,
-      id: Date.now().toString(),
-    });
+    const newStudent = formatStudent({ ...payload, id: Date.now().toString() });
     const updated = [newStudent, ...current];
     setStored('unisphere_students', updated);
     return newStudent;
@@ -310,7 +342,7 @@ export const updateStudent = async (id, studentData) => {
 
   try {
     const res = await API.put(`/students/${cleanId}`, payload);
-    const updated = res?.data || res;
+    const updated = res?.data?.data || res?.data || res;
     return formatStudent(updated);
   } catch (error) {
     console.warn("⚠️ Backend update ishlamadi, LocalStorage yangilanmoqda");
@@ -331,33 +363,30 @@ export const updateStudent = async (id, studentData) => {
 };
 
 // ==========================================
-// MUKAMMAL XP OSHIRISH (PUT ORQALI KAFOLATLI)
+// ATOMIC XP OSHIRISH (RACE-CONDITION FIX)
 // ==========================================
 export const adjustStudentPoints = async (studentId, pointsDelta) => {
   const cleanId = typeof studentId === 'object' ? (studentId._id || studentId.id) : studentId;
   const delta = Number(pointsDelta) || 0;
 
-  const allStudents = await getStudents();
-  const currentStudent = allStudents.find(s => (s.id === cleanId || s._id === cleanId));
+  try {
+    // 🟢 Atomar PATCH so'rovi yuboramiz
+    const res = await API.patch(`/students/${cleanId}/xp`, { amount: delta });
+    const updated = res?.data?.data || res?.data || res;
+    return formatStudent(updated);
+  } catch (error) {
+    console.warn("⚠️ Backend XP update ishlamadi, LocalStorage ishlatilmoqda");
+    const allStudents = await getStudents();
+    const currentStudent = allStudents.find(s => (s.id === cleanId || s._id === cleanId));
+    if (!currentStudent) return null;
 
-  if (!currentStudent) return null;
-
-  const newXp = Math.max(0, (currentStudent.xp || currentStudent.points || 0) + delta);
-
-  return await updateStudent(cleanId, {
-    ...currentStudent,
-    xp: newXp,
-    points: newXp
-  });
+    const newXp = Math.max(0, (currentStudent.xp || currentStudent.points || 0) + delta);
+    return await updateStudent(cleanId, { ...currentStudent, xp: newXp, points: newXp });
+  }
 };
 
-export const deactivateStudent = async (studentId) => {
-  return updateStudent(studentId, { status: 'inactive' });
-};
-
-export const reactivateStudent = async (studentId) => {
-  return updateStudent(studentId, { status: 'active' });
-};
+export const deactivateStudent = async (studentId) => updateStudent(studentId, { status: 'inactive' });
+export const reactivateStudent = async (studentId) => updateStudent(studentId, { status: 'active' });
 
 export const deleteStudent = async (studentId) => {
   const cleanId = typeof studentId === 'object' ? (studentId._id || studentId.id) : studentId;
@@ -375,28 +404,29 @@ export const deleteStudent = async (studentId) => {
 };
 
 // ==========================================
-// 5. ADMIN STATISTIKASI (BACKEND REALTIME INTEGRATSIYA)
+// 5. ADMIN STATISTIKASI (REALTIME)
 // ==========================================
 export const getAdminStats = async () => {
-  // LocalStorage / Backend dan joriy o'quvchilarni olamiz
-  const students = await getStudents(); 
+  try {
+    const res = await API.get('/students/admin/stats');
+    if (res && res.totalStudents !== undefined) return res;
+  } catch (e) {
+    console.warn("⚠️ Backend stats API ishlamadi, dinamik hisoblanmoqda");
+  }
+
+  const students = await getStudents();
+  const teachers = await getTeachers();
+  const groups = await getGroups();
   const orders = getStored('unisphere_orders', []);
 
-  // Faol o'quvchilarni ajratamiz (yoki hammasini ko'rsatish uchun students.length)
   const activeStudents = students.filter(s => s.status !== 'inactive');
-
-  const pendingOrdersCount = orders.filter(
-    (o) => o.status === 'pending' || !o.status
-  ).length;
+  const pendingOrdersCount = orders.filter((o) => o.status === 'pending' || !o.status).length;
 
   return {
-    totalStudents: activeStudents.length, // Agar barcha 10 tasini ko'rsatmoqchi bo'lsang: students.length
-    totalTeachers: 4,
-    totalGroups: 4,
+    totalStudents: activeStudents.length,
+    totalTeachers: teachers.length,
+    totalGroups: groups.length,
     pendingOrders: pendingOrdersCount,
-    totalXpInCirculation: students.reduce(
-      (sum, s) => sum + (Number(s.xp) || Number(s.points) || 0),
-      0
-    ),
+    totalXpInCirculation: students.reduce((sum, s) => sum + (Number(s.xp) || Number(s.points) || 0), 0),
   };
 };

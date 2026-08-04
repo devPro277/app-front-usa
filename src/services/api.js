@@ -1,10 +1,13 @@
 import axios from "axios";
 
-// Vite proksi (`vite.config.js`) `/api` so'rovlarini backend serverga yo'naltiradi
+// 🚀 REAL RENDER BACKEND URL (Vite proxy'ga bog'liq bo'lib qolmaslik uchun)
 const apiClient = axios.create({
-  baseURL: "/api",
+  baseURL: "https://usa-backend-7teh.onrender.com/api",
   headers: {
     "Content-Type": "application/json",
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0"
   },
 });
 
@@ -22,6 +25,10 @@ apiClient.interceptors.request.use(
     } else if (tgInitData) {
       config.headers.Authorization = `Bearer ${tgInitData}`;
     }
+
+    // 🚫 Caching'ni so'rov darajasida ham chetlab o'tamiz
+    config.headers["Cache-Control"] = "no-cache";
+    config.headers["Pragma"] = "no-cache";
     
     return config;
   },
@@ -29,15 +36,17 @@ apiClient.interceptors.request.use(
 );
 
 /**
- * Backend javoblarining turli xil ko'rinishlarini bir xil qilish
+ * Backend javoblarining turli xil ko'rinishlarini bir xil va xavfsiz qilish
  */
 function extractData(raw) {
-  if (raw === null || raw === undefined) return {};
+  if (raw === null || raw === undefined) return [];
   if (Array.isArray(raw)) return raw;
 
   if (typeof raw === "object") {
+    // 1. Backend { success: true, data: [...] } ko'rinishida yuborsa
     if (raw.data !== undefined) return raw.data;
 
+    // 2. Obyekt ichida massiv kalitlari bo'lsa
     for (const key of [
       "products",
       "students",
@@ -50,6 +59,9 @@ function extractData(raw) {
     ]) {
       if (Array.isArray(raw[key])) return raw[key];
     }
+
+    // 3. 304 yoki bo'sh obyekt kelib qolsa safety check
+    if (!raw.success && Object.keys(raw).length === 0) return [];
   }
 
   return raw;
@@ -58,8 +70,11 @@ function extractData(raw) {
 const unwrap = async (requestPromise) => {
   try {
     const response = await requestPromise;
-    const extracted = extractData(response.data);
-    return extracted;
+    // 304 Not Modified yoki 204 No Content holatlarini tekshirish
+    if (response.status === 304 || !response.data) {
+      return extractData(response.data);
+    }
+    return extractData(response.data);
   } catch (error) {
     const status = error.response?.status;
     const statusText = error.response?.statusText;
@@ -93,39 +108,49 @@ export const createProduct = (payload) => post("/products", payload);
 export const updateProduct = (id, payload) => put(`/products/${id}`, payload);
 export const deleteProduct = (id) => del(`/products/${id}`);
 
-// 🟢 Do'kondan sotib olish (ikkala nom bo'yicha eksport qilinadi)
+// 🟢 Do'kondan sotib olish
 export const purchaseProduct = (productId) => post(`/products/${productId}/purchase`);
 export const buyStoreItem = (productId) => purchaseProduct(productId);
 
 // ------------------ Talabalar va Reyting (Students & Leaderboard) ------------------
 
 export const getStudents = (params) => get("/students", { params });
-export const getLeaderboard = (params) => getStudents(params); // 🟢 Profile.jsx uchun alias
+export const getLeaderboard = (params) => getStudents(params);
 export const createStudent = (payload) => post("/students", payload);
 export const updateStudent = (id, payload) => put(`/students/${id}`, payload);
 export const deleteStudent = (id) => del(`/students/${id}`);
 
-// 🟢 Backend `amount` kalitini kutgani uchun `amount` yuboriladi
+// 🟢 Backend `amount` kalitini kutgani uchun atomic $inc shaklida patch
 export const adjustStudentPoints = (id, amount) => patch(`/students/${id}/xp`, { amount });
 
 // ------------------ Profil va Tranzaksiyalar ------------------
 
+export const getStudentByTelegramId = (telegramId) => get(`/students/telegram/${telegramId}`);
+
 export const getStudentProfile = async () => {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  
+  if (tgUser?.id) {
+    try {
+      // 🟢 Haqiqiy Telegram ID bo'yicha profilni chaqirish
+      const studentData = await getStudentByTelegramId(tgUser.id);
+      if (studentData && (studentData._id || studentData.id)) {
+        return studentData;
+      }
+    } catch (error) {
+      console.warn("Backendda telegram ID bo'yicha talaba topilmadi, fallback qo'llanilmoqda.");
+    }
+  }
+
   try {
     return await get("/student/profile");
   } catch (error) {
-    console.warn(
-      "Backendda profil endpointi topilmadi, vaqtinchalik profil ma'lumoti ishlatilmoqda."
-    );
-    
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    
     return {
-      id: 1,
+      id: "mock-1",
       fullName: tgUser ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : "Talaba",
       name: tgUser ? tgUser.first_name : "Talaba",
       phone: "+998 90 123 45 67",
-      group: "Frontend Bootcamp N1",
+      group: "Frontend Bootcamp",
       xp: 150,
       points: 150,
       balance: 150,
@@ -133,15 +158,16 @@ export const getStudentProfile = async () => {
   }
 };
 
-// 🟢 YANGI QO'SHILDI: XP Tranzaksiyalari tarixi (+10 XP QR davomat, -200 XP Do'kondan xaridlari)
 export const getTransactions = () => get("/students/transactions");
 
-// 🟢 YANGI QO'SHILDI: Davomat uchun QR-kodni tekshirish/aktivlashtirish
+// 🟢 QR-kod davomat
 export const redeemQrCode = (code) => post("/attendance/qr-checkin", { code });
 export const checkInQr = (code) => redeemQrCode(code);
 
-// ------------------ Admin Panel ------------------
+// ------------------ Admin Panel & Guruhlar ------------------
 
 export const getAdminStats = () => get("/students/admin/stats");
+export const getGroups = () => get("/groups");
+export const getTeachers = () => get("/teachers");
 
 export default apiClient;
