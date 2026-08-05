@@ -1,50 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
-import { FiHome, FiShoppingBag, FiUser } from 'react-icons/fi';
-import API from '../api';
+import { FiHome, FiShoppingBag, FiUser, FiRefreshCw } from 'react-icons/fi';
+import { getStudentProfile } from '../services/api';
 
 export default function StudentLayout() {
   const [currentStudent, setCurrentStudent] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [debugInfo, setDebugInfo] = useState('');
+  const [errorState, setErrorState] = useState(null);
 
   const fetchStudentProfile = async () => {
     try {
       setLoading(true);
+      setErrorState(null);
 
       const tg = window.Telegram?.WebApp;
-      const tgUser = tg?.initDataUnsafe?.user;
-      const initData = tg?.initData;
-
-      const telegramId = tgUser?.id;
-      setDebugInfo(`TG ID: ${telegramId || 'Topilmadi'}`);
-
-      let rawProfile = null;
-
-      // 1. Backend'ga so'rov yuborish
-      try {
-        const res = await API.get('/students/profile', {
-          params: { telegram_id: telegramId },
-          headers: {
-            'X-Telegram-Init-Data': initData || '',
-          },
-        });
-        rawProfile = res?.data?.data || res?.data;
-      } catch (apiErr) {
-        console.warn("Mavjud endpoint ishlagani yo'q, muqobil API tekshirilmoqda...", apiErr);
-        
-        // 2. Agar /students/profile ishlamasa, umumiy API orqali sinaymiz
-        const fallbackFn = API.getStudentProfile || API.getMe;
-        if (typeof fallbackFn === 'function') {
-          const res = await fallbackFn();
-          rawProfile = res?.data?.data || res?.data || res;
-        }
+      if (tg) {
+        tg.ready();
+        tg.expand();
       }
 
-      // Backend'dan haqiqiy profil kelsa:
-      if (rawProfile && (rawProfile.fullName || rawProfile.phone || rawProfile.xp !== undefined)) {
+      const rawProfile = await getStudentProfile();
+
+      if (rawProfile && (rawProfile._id || rawProfile.id)) {
         const profileData = {
-          id: String(rawProfile._id || rawProfile.id || telegramId),
+          id: String(rawProfile._id || rawProfile.id),
           fullName: rawProfile.fullName || rawProfile.name || `${rawProfile.firstName || ''} ${rawProfile.lastName || ''}`.trim(),
           phone: rawProfile.phone || 'Telefon yo\'q',
           group: rawProfile.groupName || rawProfile.group?.name || rawProfile.group || 'Guruhsiz',
@@ -54,32 +33,17 @@ export default function StudentLayout() {
         };
         setCurrentStudent(profileData);
       } else {
-        // Agar Backend'dan ma'lumot kelmasa (demak DB ga Telegram ID bog'lanmagan)
-        setDebugInfo((prev) => `${prev} | Backendda o'quvchi topilmadi!`);
-        
-        setCurrentStudent({
-          id: String(telegramId || 'me'),
-          fullName: tgUser ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : 'Talaba',
-          phone: 'Biriktirilmagan',
-          group: 'Bazaga ulanmagan',
-          tier: 'Bronze',
-          xp: 0,
-          groupRank: 0,
-        });
+        throw new Error("Talaba ma'lumotlari topilmadi");
       }
     } catch (err) {
       console.error("Profil yuklashda xatolik:", err);
-      setDebugInfo('API xatoligi yuz berdi');
+      setErrorState(err.response?.data?.message || err.message || "Server bilan aloqa uzildi");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    if (window.Telegram?.WebApp) {
-      window.Telegram.WebApp.ready();
-      window.Telegram.WebApp.expand();
-    }
     fetchStudentProfile();
   }, []);
 
@@ -96,16 +60,25 @@ export default function StudentLayout() {
     );
   }
 
+  if (errorState) {
+    return (
+      <div className="flex flex-col justify-center items-center min-h-screen bg-[#0B132B] text-white p-6 text-center">
+        <div className="bg-red-500/20 border border-red-500/40 text-red-300 p-4 rounded-xl max-w-sm mb-4">
+          <p className="font-bold text-sm mb-1">⚠️ Kirish xatoligi</p>
+          <p className="text-xs">{errorState}</p>
+        </div>
+        <button
+          onClick={fetchStudentProfile}
+          className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded-lg text-xs font-semibold transition-colors"
+        >
+          <FiRefreshCw className="w-4 h-4" /> Qayta urinish
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#0B132B] text-white font-sans antialiased relative">
-      
-      {/* TEST UCHUN DEBUG QISMI (Xatolikni topib bo'lgach o'chirib tashlaymiz) */}
-      {debugInfo.includes('topilmadi') && (
-        <div className="bg-red-500/20 border border-red-500/40 text-red-300 text-[11px] p-2 text-center">
-          ⚠️ {debugInfo} — Admin bazasida ushbu Telegram account ID ga mos o'quvchi biriktirilmagan.
-        </div>
-      )}
-
       <main className="pb-20">
         <Outlet context={{ currentStudent, updateStudentXp, fetchStudentProfile }} />
       </main>

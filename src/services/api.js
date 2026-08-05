@@ -130,32 +130,12 @@ export const getStudentByTelegramId = (telegramId) => get(`/students/telegram/${
 export const getStudentProfile = async () => {
   const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
   
-  if (tgUser?.id) {
-    try {
-      // 🟢 Haqiqiy Telegram ID bo'yicha profilni chaqirish
-      const studentData = await getStudentByTelegramId(tgUser.id);
-      if (studentData && (studentData._id || studentData.id)) {
-        return studentData;
-      }
-    } catch (error) {
-      console.warn("Backendda telegram ID bo'yicha talaba topilmadi, fallback qo'llanilmoqda.");
-    }
+  if (!tgUser?.id) {
+    throw new Error("Telegram foydalanuvchisi aniqlanmadi. Iltimos, ilovani Telegram ichidan oching.");
   }
 
-  try {
-    return await get("/student/profile");
-  } catch (error) {
-    return {
-      id: "mock-1",
-      fullName: tgUser ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : "Talaba",
-      name: tgUser ? tgUser.first_name : "Talaba",
-      phone: "+998 90 123 45 67",
-      group: "Frontend Bootcamp",
-      xp: 150,
-      points: 150,
-      balance: 150,
-    };
-  }
+  // Faqatgina yagona standart endpoint orqali so'rov yuboriladi
+  return await getStudentByTelegramId(tgUser.id);
 };
 
 export const getTransactions = () => get("/students/transactions");
