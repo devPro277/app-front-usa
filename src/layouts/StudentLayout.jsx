@@ -7,28 +7,47 @@ export default function StudentLayout() {
   const [currentStudent, setCurrentStudent] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // O'quvchi ma'lumotlarini yuklash
+  // O'quvchi ma'lumotlarini backend'dan Telegram ID orqali yuklash
   const fetchStudentProfile = async () => {
     try {
       setLoading(true);
-      const getProfileFn = API.getStudentProfile || API.getMe;
-      
+
+      const tg = window.Telegram?.WebApp;
+      const tgUser = tg?.initDataUnsafe?.user;
+      const initData = tg?.initData;
+
+      // Telegram ID mavjud bo'lsa, uni backend'ga parametr va header sifatida yuboramiz
+      const telegramId = tgUser?.id;
+
       let rawProfile = null;
-      if (typeof getProfileFn === 'function') {
-        const res = await getProfileFn();
-        rawProfile = res?.data?.data || res?.data || res;
-      }
 
-      const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      // 1. Backend API ga so'rov yuborish
+      const res = await API.get('/students/profile', {
+        params: { telegram_id: telegramId },
+        headers: {
+          'X-Telegram-Init-Data': initData || '',
+        },
+      }).catch(async (err) => {
+        // Agar maxsus endpoint bo'lmasa, umumiy getStudentProfile/getMe funksiyasiga fallback qilamiz
+        const fallbackFn = API.getStudentProfile || API.getMe;
+        if (typeof fallbackFn === 'function') {
+          return await fallbackFn();
+        }
+        throw err;
+      });
 
+      rawProfile = res?.data?.data || res?.data || res;
+
+      // 2. Admin kiritgan BAZADAGI HAQIQIY MA'LUMOTLARNI normalization qilish
       const profileData = {
-        id: String(rawProfile?.id || rawProfile?._id || tgUser?.id || 'me'),
+        id: String(rawProfile?.id || rawProfile?._id || telegramId || 'me'),
         fullName:
           rawProfile?.fullName ||
           rawProfile?.name ||
+          (rawProfile?.firstName ? `${rawProfile.firstName} ${rawProfile.lastName || ''}`.trim() : null) ||
           (tgUser ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : 'Talaba'),
         phone: rawProfile?.phone || '+998 (90) 000-00-00',
-        group: rawProfile?.group || rawProfile?.groupName || 'Frontend Bootcamp',
+        group: rawProfile?.group || rawProfile?.groupName || rawProfile?.group?.name || 'Frontend Bootcamp',
         tier: rawProfile?.tier || 'Bronze',
         xp: Number(rawProfile?.xp ?? rawProfile?.points ?? rawProfile?.balance ?? 0),
         groupRank: rawProfile?.groupRank || 0,
@@ -74,7 +93,6 @@ export default function StudentLayout() {
       {/* PASTKI MENYU (Bottom Navigation) */}
       <nav className="fixed bottom-0 left-0 right-0 bg-[#1C2541]/95 backdrop-blur-md border-t border-slate-800/80 px-6 py-2.5 z-50 max-w-md mx-auto">
         <div className="flex justify-between items-center">
-          
           <NavLink
             to="/"
             end
@@ -111,7 +129,6 @@ export default function StudentLayout() {
             <FiUser className="w-5 h-5" />
             <span className="text-[10px]">Profil</span>
           </NavLink>
-
         </div>
       </nav>
     </div>
