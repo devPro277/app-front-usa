@@ -2,7 +2,7 @@ import axios from "axios";
 
 // 🚀 REAL RENDER BACKEND URL (Vite proxy'ga bog'liq bo'lib qolmaslik uchun)
 const apiClient = axios.create({
-  baseURL: "https://usa-backend-7teh.onrender.com/api",
+  baseURL: import.meta.env.VITE_API_URL || "https://usa-backend-7teh.onrender.com",
   headers: {
     "Content-Type": "application/json",
     "Cache-Control": "no-cache, no-store, must-revalidate",
