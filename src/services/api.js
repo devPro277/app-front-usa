@@ -103,29 +103,29 @@ export const del = (url, config) => unwrap(apiClient.delete(url, config));
 
 // ------------------ Mahsulotlar (Products / Store) ------------------
 
-export const getProducts = () => get("/products");
-export const createProduct = (payload) => post("/products", payload);
-export const updateProduct = (id, payload) => put(`/products/${id}`, payload);
-export const deleteProduct = (id) => del(`/products/${id}`);
+export const getProducts = () => get("/api/products");
+export const createProduct = (payload) => post("/api/products", payload);
+export const updateProduct = (id, payload) => put(`/api/products/${id}`, payload);
+export const deleteProduct = (id) => del(`/api/products/${id}`);
 
 // 🟢 Do'kondan sotib olish
-export const purchaseProduct = (productId) => post(`/products/${productId}/purchase`);
+export const purchaseProduct = (productId) => post(`/api/products/${productId}/purchase`);
 export const buyStoreItem = (productId) => purchaseProduct(productId);
 
 // ------------------ Talabalar va Reyting (Students & Leaderboard) ------------------
 
-export const getStudents = (params) => get("/students", { params });
+export const getStudents = (params) => get("/api/students", { params });
 export const getLeaderboard = (params) => getStudents(params);
-export const createStudent = (payload) => post("/students", payload);
-export const updateStudent = (id, payload) => put(`/students/${id}`, payload);
-export const deleteStudent = (id) => del(`/students/${id}`);
+export const createStudent = (payload) => post("/api/students", payload);
+export const updateStudent = (id, payload) => put(`/api/students/${id}`, payload);
+export const deleteStudent = (id) => del(`/api/students/${id}`);
 
 // 🟢 Backend `amount` kalitini kutgani uchun atomic $inc shaklida patch
-export const adjustStudentPoints = (id, amount) => patch(`/students/${id}/xp`, { amount });
+export const adjustStudentPoints = (id, amount) => patch(`/api/students/${id}/xp`, { amount });
 
 // ------------------ Profil va Tranzaksiyalar ------------------
 
-export const getStudentByTelegramId = (telegramId) => get(`/students/telegram/${telegramId}`);
+export const getStudentByTelegramId = (telegramId) => get(`/api/students/telegram/${telegramId}`);
 
 export const getStudentProfile = async () => {
   const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
@@ -138,16 +138,16 @@ export const getStudentProfile = async () => {
   return await getStudentByTelegramId(tgUser.id);
 };
 
-export const getTransactions = () => get("/students/transactions");
+export const getTransactions = () => get("/api/students/transactions");
 
 // 🟢 QR-kod davomat
-export const redeemQrCode = (code) => post("/attendance/qr-checkin", { code });
+export const redeemQrCode = (code) => post("/api/attendance/qr-checkin", { code });
 export const checkInQr = (code) => redeemQrCode(code);
 
 // ------------------ Admin Panel & Guruhlar ------------------
 
-export const getAdminStats = () => get("/students/admin/stats");
-export const getGroups = () => get("/groups");
-export const getTeachers = () => get("/teachers");
+export const getAdminStats = () => get("/api/students/admin/stats");
+export const getGroups = () => get("/api/groups");
+export const getTeachers = () => get("/api/teachers");
 
 export default apiClient;
