@@ -11,6 +11,14 @@ const TIER_COLORS = {
   Diamond: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
 };
 
+// 💡 XP boyicha dinamik Tier (Daraja) hisoblash funksiyasi
+const calculateTier = (xp = 0) => {
+  if (xp >= 10000) return 'Diamond';
+  if (xp >= 5000) return 'Gold';
+  if (xp >= 2000) return 'Silver';
+  return 'Bronze';
+};
+
 export default function Profile() {
   const [student, setStudent] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -33,6 +41,7 @@ export default function Profile() {
       }
 
       const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+      const userXp = Number(rawProfile?.xp ?? rawProfile?.points ?? rawProfile?.balance ?? 0);
 
       const profileData = {
         id: String(rawProfile?.id || rawProfile?._id || tgUser?.id || 'me'),
@@ -40,14 +49,14 @@ export default function Profile() {
           rawProfile?.fullName ||
           rawProfile?.name ||
           (tgUser ? `${tgUser.first_name} ${tgUser.last_name || ''}`.trim() : 'Talaba'),
-        phone: rawProfile?.phone || '+998 (90) 000-00-00',
-        group: rawProfile?.group || rawProfile?.groupName || 'Frontend Bootcamp',
-        tier: rawProfile?.tier || 'Bronze',
-        xp: Number(rawProfile?.xp ?? rawProfile?.points ?? rawProfile?.balance ?? 0),
-        groupRank: rawProfile?.groupRank || 0,
+        phone: rawProfile?.phone || '',
+        group: rawProfile?.group || rawProfile?.groupName || "Noma'lum",
+        // 💡 Tier qismini endi XP ga qarab dinamik hisoblaymiz:
+        tier: rawProfile?.tier || calculateTier(userXp),
+        xp: userXp,
       };
 
-      // 2. Leaderboard ma'lumotlarini olish (Guruh bo'yicha parametr uzatamiz)
+      // 2. Leaderboard ma'lumotlarini olish (Guruh bo'yicha)
       const getBoardFn = API.getLeaderboard || API.getStudents;
       let boardRes = [];
       if (typeof getBoardFn === 'function') {
@@ -89,17 +98,17 @@ export default function Profile() {
 
   const currentStudent = student || {
     fullName: 'Talaba',
-    phone: '+998 (90) 000-00-00',
+    phone: '',
     group: "Noma'lum",
     tier: 'Bronze',
     xp: 0,
   };
 
-  const studentId = String(currentStudent.id || currentStudent._id);
+  const studentId = String(currentStudent.id);
 
-  // Guruhdagi o'rinni aniqlash (String tipida xavfsiz taqqoslash)
+  // Guruhdagi o'rinni aniqlash
   const foundIndex = leaderboard.findIndex((s) => String(s.id || s._id) === studentId);
-  const myRank = currentStudent.groupRank || (foundIndex !== -1 ? foundIndex + 1 : 0);
+  const myRank = foundIndex !== -1 ? foundIndex + 1 : 0;
 
   const top3 = leaderboard.slice(0, 3);
   const rest = leaderboard.slice(3, 10);
@@ -124,7 +133,7 @@ export default function Profile() {
                 TIER_COLORS[currentStudent.tier] || TIER_COLORS.Bronze
               }`}
             >
-              {currentStudent.tier || 'Bronze'}
+              {currentStudent.tier}
             </span>
             <ThemeToggle />
           </div>
@@ -165,7 +174,6 @@ export default function Profile() {
 
         {leaderboard.length > 0 ? (
           <>
-            {/* Pedestal layout: 2-o'rin (chap), 1-o'rin (o'rta), 3-o'rin (o'ng) */}
             <div className="flex items-end justify-center gap-3 pb-4">
               <PodiumCard student={top3[1]} rank={2} height="h-20" />
               <PodiumCard student={top3[0]} rank={1} height="h-28" />
@@ -198,7 +206,7 @@ export default function Profile() {
 
 function PodiumCard({ student, rank, height }) {
   if (!student) return <div className="w-24 opacity-0 pointer-events-none" />;
-  
+
   const badge = rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉';
   const accentColor =
     rank === 1 ? 'text-amber-500' : rank === 2 ? 'text-slate-400' : 'text-amber-700';
